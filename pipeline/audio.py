@@ -29,6 +29,39 @@ def extract_audio(mp4_bytes: bytes) -> bytes:
 
     Raises:
         RuntimeError: If ffmpeg exits with a non-zero status.
-        NotImplementedError: Placeholder — replace body with real impl.
     """
-    raise NotImplementedError("audio.extract_audio is not yet implemented")
+    with tempfile.NamedTemporaryFile(suffix=".mp4", delete=False) as inp:
+        inp.write(mp4_bytes)
+        inp_path = inp.name
+
+    out_path = inp_path.replace(".mp4", ".mp3")
+
+    try:
+        result = subprocess.run(
+            [
+                "ffmpeg", "-y",
+                "-i", inp_path,
+                "-vn",
+                "-ac", "1",
+                "-ar", "16000",
+                "-b:a", _BITRATE,
+                out_path,
+            ],
+            capture_output=True,
+        )
+
+        if result.returncode != 0:
+            raise RuntimeError(
+                f"ffmpeg failed (exit {result.returncode}):\n"
+                + result.stderr.decode(errors="replace")
+            )
+
+        logger.info("ffmpeg extracted audio: %s -> %s", inp_path, out_path)
+
+        with open(out_path, "rb") as f:
+            return f.read()
+
+    finally:
+        os.unlink(inp_path)
+        if os.path.exists(out_path):
+            os.unlink(out_path)

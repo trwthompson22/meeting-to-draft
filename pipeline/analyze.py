@@ -43,7 +43,13 @@ def analyze_transcript(transcript: str) -> dict:
     message = client.messages.create(
         model=_MODEL,
         max_tokens=1024,
-        system=_SYSTEM,
+        system=[
+            {
+                "type": "text",
+                "text": _SYSTEM,
+                "cache_control": {"type": "ephemeral"},
+            }
+        ],
         messages=[
             {
                 "role": "user",

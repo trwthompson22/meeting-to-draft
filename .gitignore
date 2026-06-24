@@ -1,0 +1,19 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+dist/
+build/
+
+# Environment
+.env
+.env.local
+
+# Azure Functions
+.python_packages/
+local.settings.json
+
+# macOS
+.DS_Store
