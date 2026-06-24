@@ -58,6 +58,7 @@ def process_recording(req: func.HttpRequest) -> func.HttpResponse:
         logger.info("Step 5/5 — creating Outlook draft")
         body_html = email.render_body(
             summary=analysis["summary"],
+            key_takeaways=analysis.get("key_takeaways", []),
             action_items=analysis.get("action_items", []),
         )
         draft_id = graph.create_draft(

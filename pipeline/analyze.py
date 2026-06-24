@@ -21,12 +21,20 @@ following and return ONLY valid JSON — no markdown, no extra prose:
 
 {
   "subject": "<concise email subject line, ≤ 60 chars>",
-  "summary": "<2-4 sentence meeting summary>",
+  "summary": "<1-2 sentence high-level summary of the meeting>",
+  "key_takeaways": [
+    "<key takeaway>",
+    "<key takeaway>",
+    "<key takeaway>",
+    "<key takeaway>",
+    "<key takeaway>"
+  ],
   "action_items": [
     {"description": "<what needs to be done>", "owner": "<person name or role>", "deadline": "<YYYY-MM-DD or null>"}
   ]
 }
 
+Provide 5-7 key takeaways as concise bullet strings.
 If a field cannot be determined from the transcript use null."""
 
 

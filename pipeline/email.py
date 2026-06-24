@@ -3,22 +3,30 @@ Email body formatting: render analysis output into an HTML email body.
 """
 
 
-def render_body(summary: str, action_items: list[dict]) -> str:
+def render_body(summary: str, key_takeaways: list[str], action_items: list[dict]) -> str:
     """
-    Render an HTML email body from a meeting summary and action items.
+    Render an HTML email body from a meeting summary, key takeaways, and action items.
 
     Args:
-        summary:      Plain-text meeting summary.
-        action_items: List of dicts with keys: description, owner, deadline.
+        summary:       1-2 sentence meeting summary.
+        key_takeaways: List of key takeaway strings.
+        action_items:  List of dicts with keys: description, owner, deadline.
 
     Returns:
         HTML string suitable for use as an Outlook message body.
-
-    Raises:
-        NotImplementedError: Placeholder — replace body with real impl.
     """
+    takeaway_items = "".join(
+        f"<li style='margin-bottom:4px;'>{item}</li>"
+        for item in (key_takeaways or [])
+    )
+    takeaways_section = f"""
+<h3 style='font-family:Arial,sans-serif;color:#333;margin-bottom:6px;'>Key Takeaways</h3>
+<ul style='font-family:Arial,sans-serif;font-size:14px;color:#333;margin-top:0;padding-left:20px;'>
+  {takeaway_items}
+</ul>""" if takeaway_items else ""
+
     rows = ""
-    for item in action_items:
+    for item in (action_items or []):
         owner = item.get("owner") or "—"
         deadline = item.get("deadline") or "—"
         description = item.get("description", "")
@@ -33,7 +41,7 @@ def render_body(summary: str, action_items: list[dict]) -> str:
     action_table = ""
     if rows:
         action_table = f"""
-<h3 style='font-family:Arial,sans-serif;color:#333;'>Action Items</h3>
+<h3 style='font-family:Arial,sans-serif;color:#333;margin-bottom:6px;'>Action Items</h3>
 <table style='border-collapse:collapse;font-family:Arial,sans-serif;font-size:14px;'>
   <thead>
     <tr style='background:#f5f5f5;'>
@@ -46,7 +54,8 @@ def render_body(summary: str, action_items: list[dict]) -> str:
 </table>"""
 
     return f"""<html><body style='font-family:Arial,sans-serif;color:#333;font-size:14px;'>
-<h3 style='color:#333;'>Meeting Summary</h3>
-<p>{summary}</p>
+<h3 style='color:#333;margin-bottom:6px;'>Meeting Summary</h3>
+<p style='margin-top:0;'>{summary}</p>
+{takeaways_section}
 {action_table}
 </body></html>"""
