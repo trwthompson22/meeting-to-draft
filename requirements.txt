@@ -2,4 +2,5 @@ azure-functions
 msal
 requests
 anthropic
+openai
 groq

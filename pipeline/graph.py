@@ -1,17 +1,19 @@
 """
 Microsoft Graph API integration: auth, OneDrive download, Outlook draft creation.
 
+Uses app-only (client credentials) auth — compatible with Microsoft 365 work/school accounts.
+
 Required environment variables:
     AZURE_TENANT_ID      - Azure AD tenant ID
     AZURE_CLIENT_ID      - App registration client ID
     AZURE_CLIENT_SECRET  - App registration client secret
     ONEDRIVE_USER_ID     - UPN or object ID of the user whose drive to access
     MAIL_USER_ID         - UPN or object ID of the user whose mailbox to write to
-                           (may be the same as ONEDRIVE_USER_ID)
 """
 
 import os
 import logging
+from typing import Optional
 import requests
 import msal
 
@@ -25,7 +27,6 @@ def _get_app() -> msal.ConfidentialClientApplication:
     tenant_id = os.environ["AZURE_TENANT_ID"]
     client_id = os.environ["AZURE_CLIENT_ID"]
     client_secret = os.environ["AZURE_CLIENT_SECRET"]
-
     authority = f"https://login.microsoftonline.com/{tenant_id}"
     return msal.ConfidentialClientApplication(
         client_id=client_id,
@@ -38,7 +39,6 @@ def get_token() -> str:
     """Acquire an app-only access token via client credentials flow."""
     app = _get_app()
 
-    # Try the token cache first before going to the network.
     result = app.acquire_token_silent(SCOPE, account=None)
     if result and "access_token" in result:
         logger.debug("Token served from MSAL cache.")
@@ -71,7 +71,7 @@ def _raise_for_graph(response: requests.Response) -> None:
         raise RuntimeError(f"Graph API error {code}: {message}")
 
 
-def download_recording(file_id: str, drive_id: str | None = None) -> bytes:
+def download_recording(file_id: str, drive_id: Optional[str] = None) -> bytes:
     """
     Download a recording file from OneDrive and return its raw bytes.
 
@@ -102,8 +102,8 @@ def create_draft(
     subject: str,
     body_html: str,
     to_recipients: list[str],
-    cc_recipients: list[str] | None = None,
-    conversation_id: str | None = None,
+    cc_recipients: Optional[list] = None,
+    conversation_id: Optional[str] = None,
 ) -> str:
     """
     Create an Outlook draft message in the mailbox of MAIL_USER_ID.
