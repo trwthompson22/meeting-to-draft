@@ -1,6 +1,8 @@
-# meeting-to-draft
+# meeting-to-draft2
 
-An Azure Function that turns a Teams/OneDrive meeting recording into an Outlook draft email. Given a OneDrive file ID, it downloads the recording, transcribes the audio (Groq Whisper), extracts a summary and action items (Claude or OpenAI), and creates a draft in an Outlook mailbox.
+An Azure Function that turns a Teams meeting transcript into an Outlook draft email. Given a Teams online meeting ID, it fetches the transcript directly from Microsoft Graph, extracts a summary and action items (Claude or OpenAI), and creates a draft in an Outlook mailbox.
+
+This is the **M365 transcript variant** — it requires no audio processing or third-party transcription. The transcript is fetched natively from Microsoft Graph using the `OnlineMeetingTranscript.Read.All` application permission.
 
 ---
 
@@ -8,10 +10,8 @@ An Azure Function that turns a Teams/OneDrive meeting recording into an Outlook 
 
 ```
 POST /api/process-recording
-  → download .mp4 from OneDrive
-  → extract audio with ffmpeg
-  → transcribe with Groq Whisper
-  → analyze with Claude or OpenAI (summary + action items)
+  → fetch Teams transcript via Microsoft Graph
+  → analyze with Claude or OpenAI (summary + key takeaways + action items)
   → create Outlook draft via Microsoft Graph
 ```
 
@@ -21,8 +21,7 @@ POST /api/process-recording
 
 - Python 3.10+
 - [Azure Functions Core Tools v4](https://learn.microsoft.com/en-us/azure/azure-functions/functions-run-local)
-- `ffmpeg` on your PATH (`brew install ffmpeg` on Mac)
-- A Microsoft 365 work/school account
+- A Microsoft 365 work/school account with Teams transcripts enabled
 
 ---
 
@@ -48,22 +47,19 @@ POST /api/process-recording
 ### 3. Grant API permissions
 
 1. Go to **API permissions → Add a permission → Microsoft Graph → Application permissions**
-2. Add both:
-   - `Files.Read.All`
+2. Add all three:
+   - `OnlineMeetingTranscript.Read.All`
    - `Mail.ReadWrite`
 3. Click **Grant admin consent for [your tenant]** and confirm
 
-> Application permissions require admin consent. Without it the app will authenticate successfully but all Graph API calls will return 403.
+> `OnlineMeetingTranscript.Read.All` is required to fetch Teams transcripts via app-only auth. Without admin consent all Graph calls will return 403.
 
 ### 4. Get API keys
-
-You need a key for one LLM provider (Anthropic or OpenAI) plus Groq for transcription:
 
 | Key | Where to get it | Required |
 |-----|----------------|----------|
 | `ANTHROPIC_API_KEY` | [console.anthropic.com](https://console.anthropic.com) | If using Anthropic |
 | `OPENAI_API_KEY` | [platform.openai.com](https://platform.openai.com) | If using OpenAI |
-| `GROQ_API_KEY` | [console.groq.com](https://console.groq.com) | Always |
 
 ### 5. Configure environment variables
 
@@ -78,21 +74,18 @@ Copy `.env.example` to `local.settings.json` and fill in all values:
     "AZURE_TENANT_ID": "<from step 1>",
     "AZURE_CLIENT_ID": "<from step 1>",
     "AZURE_CLIENT_SECRET": "<from step 2>",
-    "ONEDRIVE_USER_ID": "<UPN of user whose OneDrive to access, e.g. user@domain.com>",
+    "ONEDRIVE_USER_ID": "<UPN of meeting organiser, e.g. user@domain.com>",
     "MAIL_USER_ID": "<UPN of user whose Outlook drafts to write to>",
     "MODEL_PROVIDER": "anthropic",
     "ANTHROPIC_API_KEY": "<your Anthropic key>",
-    "OPENAI_API_KEY": "<your OpenAI key>",
-    "GROQ_API_KEY": "<from step 4>"
+    "OPENAI_API_KEY": "<your OpenAI key>"
   }
 }
 ```
 
-`ONEDRIVE_USER_ID` and `MAIL_USER_ID` are typically the same — the email address of the M365 user whose recordings you want to process.
-
 #### Switching LLM providers
 
-Set `MODEL_PROVIDER` to either `anthropic` or `openai` and provide the corresponding API key. The other key can be left blank.
+Set `MODEL_PROVIDER` to either `anthropic` or `openai` and provide the corresponding API key.
 
 | `MODEL_PROVIDER` | Model used | Key required |
 |-----------------|------------|--------------|
@@ -120,13 +113,13 @@ func start
 
 ## Usage
 
-Call the function with the OneDrive item ID of a recording:
+Call the function with the Teams online meeting ID:
 
 ```bash
 curl -X POST http://localhost:7071/api/process-recording \
   -H "Content-Type: application/json" \
   -d '{
-    "file_id": "<OneDrive item ID>",
+    "meeting_id": "<Teams online meeting ID>",
     "to_recipients": ["recipient@domain.com"],
     "cc_recipients": ["cc@domain.com"],
     "conversation_id": "<optional — threads draft into an existing email conversation>"
@@ -135,9 +128,9 @@ curl -X POST http://localhost:7071/api/process-recording \
 
 On success, returns `{"draft_id": "<Outlook message ID>"}`. The draft will appear in the `MAIL_USER_ID` mailbox.
 
-### Getting a OneDrive file ID
+### Getting a Teams meeting ID
 
-The easiest way to supply `file_id` automatically is via a Power Automate flow that triggers when a recording is saved to OneDrive and passes the file ID to this endpoint. To find an ID manually, use [Microsoft Graph Explorer](https://developer.microsoft.com/en-us/graph/graph-explorer) and call `GET /me/drive/root/children`.
+The easiest way is via a Power Automate flow that triggers when a Teams meeting ends and passes the meeting ID to this endpoint. The meeting ID is available as a dynamic value in the Teams connector trigger.
 
 ---
 
@@ -145,8 +138,7 @@ The easiest way to supply `file_id` automatically is via a Power Automate flow t
 
 | Field | Required | Description |
 |-------|----------|-------------|
-| `file_id` | Yes | OneDrive item ID of the `.mp4` recording |
+| `meeting_id` | Yes | Teams online meeting ID |
 | `to_recipients` | Yes | Array of To: email addresses |
 | `cc_recipients` | No | Array of Cc: email addresses |
-| `drive_id` | No | OneDrive drive ID (uses user's default drive if omitted) |
 | `conversation_id` | No | Graph conversation ID to thread the draft as a reply |

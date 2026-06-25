@@ -14,6 +14,7 @@ build/
 # Azure Functions
 .python_packages/
 local.settings.json
+__azurite_db*
 
 # macOS
 .DS_Store

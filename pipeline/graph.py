@@ -1,5 +1,5 @@
 """
-Microsoft Graph API integration: auth, OneDrive download, Outlook draft creation.
+Microsoft Graph API integration: auth, Teams transcript fetch, Outlook draft creation.
 
 Uses app-only (client credentials) auth — compatible with Microsoft 365 work/school accounts.
 
@@ -7,7 +7,7 @@ Required environment variables:
     AZURE_TENANT_ID      - Azure AD tenant ID
     AZURE_CLIENT_ID      - App registration client ID
     AZURE_CLIENT_SECRET  - App registration client secret
-    ONEDRIVE_USER_ID     - UPN or object ID of the user whose drive to access
+    ONEDRIVE_USER_ID     - UPN or object ID of the meeting organiser
     MAIL_USER_ID         - UPN or object ID of the user whose mailbox to write to
 """
 
@@ -71,31 +71,48 @@ def _raise_for_graph(response: requests.Response) -> None:
         raise RuntimeError(f"Graph API error {code}: {message}")
 
 
-def download_recording(file_id: str, drive_id: Optional[str] = None) -> bytes:
+def get_transcript(meeting_id: str) -> str:
     """
-    Download a recording file from OneDrive and return its raw bytes.
+    Fetch the transcript text for a Teams online meeting via Microsoft Graph.
+
+    Requires the OnlineMeetingTranscript.Read.All application permission
+    granted and admin-consented on the app registration.
 
     Args:
-        file_id:  The OneDrive item ID of the recording file.
-        drive_id: Optional drive ID. When omitted the default drive of
-                  ONEDRIVE_USER_ID is used.
+        meeting_id: The Teams online meeting ID (e.g. from a Power Automate trigger).
 
     Returns:
-        Raw bytes of the downloaded file (typically an .mp4).
+        Plain-text transcript content.
+
+    Raises:
+        RuntimeError: If no transcripts are found or the Graph call fails.
     """
     user_id = os.environ["ONEDRIVE_USER_ID"]
 
-    if drive_id:
-        url = f"{GRAPH_BASE}/drives/{drive_id}/items/{file_id}/content"
-    else:
-        url = f"{GRAPH_BASE}/users/{user_id}/drive/items/{file_id}/content"
+    list_url = (
+        f"{GRAPH_BASE}/users/{user_id}/onlineMeetings/{meeting_id}/transcripts"
+    )
+    logger.info("Fetching transcripts for meeting %s", meeting_id)
+    resp = requests.get(list_url, headers=_auth_headers(), timeout=30)
+    _raise_for_graph(resp)
 
-    logger.info("Downloading OneDrive item %s", file_id)
-    response = requests.get(url, headers=_auth_headers(), allow_redirects=True, timeout=300)
-    _raise_for_graph(response)
+    transcripts = resp.json().get("value", [])
+    if not transcripts:
+        raise RuntimeError(f"No transcripts found for meeting {meeting_id}")
 
-    logger.info("Downloaded %d bytes for item %s", len(response.content), file_id)
-    return response.content
+    transcript_id = transcripts[0]["id"]
+    content_url = (
+        f"{GRAPH_BASE}/users/{user_id}/onlineMeetings/{meeting_id}"
+        f"/transcripts/{transcript_id}/content?$format=text/plain"
+    )
+    logger.info("Downloading transcript %s", transcript_id)
+    content_resp = requests.get(
+        content_url, headers=_auth_headers(), timeout=60
+    )
+    _raise_for_graph(content_resp)
+
+    logger.info("Fetched transcript (%d chars)", len(content_resp.text))
+    return content_resp.text
 
 
 def create_draft(
