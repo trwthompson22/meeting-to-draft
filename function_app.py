@@ -3,7 +3,8 @@ Azure Function HTTP trigger — entry point for the meeting-to-draft pipeline.
 
 Power Automate calls this endpoint with a JSON body:
 {
-    "meeting_id":      "<Teams online meeting ID>",
+    "meeting_id":      "<Teams online meeting ID>",   // OR
+    "transcript":      "<raw transcript text>",        // pass directly to skip Graph fetch
     "conversation_id": "<optional Graph conversation ID for reply threading>",
     "to_recipients":   ["<email>", ...],
     "cc_recipients":   ["<email>", ...]   // optional
@@ -30,8 +31,13 @@ def process_recording(req: func.HttpRequest) -> func.HttpResponse:
         return func.HttpResponse("Request body must be valid JSON.", status_code=400)
 
     meeting_id = body.get("meeting_id")
-    if not meeting_id:
-        return func.HttpResponse("Missing required field: meeting_id", status_code=400)
+    raw_transcript = body.get("transcript")
+
+    if not meeting_id and not raw_transcript:
+        return func.HttpResponse(
+            "Missing required field: provide either meeting_id or transcript",
+            status_code=400,
+        )
 
     conversation_id = body.get("conversation_id")
     to_recipients = body.get("to_recipients", [])
@@ -41,8 +47,12 @@ def process_recording(req: func.HttpRequest) -> func.HttpResponse:
         return func.HttpResponse("Missing required field: to_recipients", status_code=400)
 
     try:
-        logger.info("Step 1/3 — fetching transcript for meeting %s", meeting_id)
-        transcript = graph.get_transcript(meeting_id)
+        if raw_transcript:
+            logger.info("Step 1/3 — using raw transcript passthrough")
+            transcript = raw_transcript
+        else:
+            logger.info("Step 1/3 — fetching transcript for meeting %s", meeting_id)
+            transcript = graph.get_transcript(meeting_id)
 
         logger.info("Step 2/3 — analysing transcript")
         analysis = analyze.analyze_transcript(transcript)
