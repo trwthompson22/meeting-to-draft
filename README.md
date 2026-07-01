@@ -1,6 +1,6 @@
 # meeting-to-draft2
 
-An Azure Function that turns a Teams meeting transcript into an Outlook draft email. Given a Teams online meeting ID, it fetches the transcript directly from Microsoft Graph, extracts a summary and action items (Claude or OpenAI), and creates a draft in an Outlook mailbox.
+An Azure Function that turns a Teams meeting transcript into an Outlook draft email. It fetches the transcript directly from Microsoft Graph (or accepts raw transcript text), extracts a summary, key takeaways, and action items using Claude or OpenAI, and creates a draft in an Outlook mailbox.
 
 This is the **M365 transcript variant** — it requires no audio processing or third-party transcription. The transcript is fetched natively from Microsoft Graph using the `OnlineMeetingTranscript.Read.All` application permission.
 
@@ -10,7 +10,7 @@ This is the **M365 transcript variant** — it requires no audio processing or t
 
 ```
 POST /api/process-recording
-  → fetch Teams transcript via Microsoft Graph
+  → fetch Teams transcript via Microsoft Graph (or accept raw transcript text)
   → analyze with Claude or OpenAI (summary + key takeaways + action items)
   → create Outlook draft via Microsoft Graph
 ```
@@ -47,12 +47,12 @@ POST /api/process-recording
 ### 3. Grant API permissions
 
 1. Go to **API permissions → Add a permission → Microsoft Graph → Application permissions**
-2. Add all three:
+2. Add both:
    - `OnlineMeetingTranscript.Read.All`
    - `Mail.ReadWrite`
 3. Click **Grant admin consent for [your tenant]** and confirm
 
-> `OnlineMeetingTranscript.Read.All` is required to fetch Teams transcripts via app-only auth. Without admin consent all Graph calls will return 403.
+> Without admin consent all Graph API calls will return 403.
 
 ### 4. Get API keys
 
@@ -97,32 +97,60 @@ To override the model, set `ANTHROPIC_MODEL` or `OPENAI_MODEL` in your settings.
 ### 6. Install dependencies
 
 ```bash
-python -m venv .venv
-source .venv/bin/activate   # Windows: .venv\Scripts\activate
-pip install -r requirements.txt
+pip install --target=.python_packages/lib/site-packages -r requirements.txt
 ```
 
 ### 7. Run locally
 
 ```bash
-source .venv/bin/activate
-func start
+PYTHONPATH=.python_packages/lib/site-packages func start
 ```
 
 ---
 
 ## Usage
 
-Call the function with the Teams online meeting ID:
+### Option 1 — Dry run (preview only, no Outlook draft created)
+
+Use this to test the analysis output without needing Graph permissions. Accepts either a raw transcript string or a VTT-formatted transcript. Returns the email subject and HTML body.
+
+```bash
+curl -X POST http://localhost:7071/api/process-recording \
+  -H "Content-Type: application/json" \
+  -d '{
+    "transcript": "<raw or VTT transcript text>",
+    "dry_run": true
+  }'
+```
+
+Returns:
+```json
+{ "subject": "...", "body_html": "..." }
+```
+
+### Option 2 — Live (creates Outlook draft)
+
+Use this once Graph permissions are in place. Accepts either `transcript` (raw text) or `meeting_id` (fetches from Teams via Graph).
+
+```bash
+curl -X POST http://localhost:7071/api/process-recording \
+  -H "Content-Type: application/json" \
+  -d '{
+    "transcript": "<raw or VTT transcript text>",
+    "to_recipients": ["recipient@domain.com"],
+    "cc_recipients": ["cc@domain.com"],
+    "conversation_id": "<optional — threads draft into an existing email conversation>"
+  }'
+```
+
+Or using a Teams meeting ID directly:
 
 ```bash
 curl -X POST http://localhost:7071/api/process-recording \
   -H "Content-Type: application/json" \
   -d '{
     "meeting_id": "<Teams online meeting ID>",
-    "to_recipients": ["recipient@domain.com"],
-    "cc_recipients": ["cc@domain.com"],
-    "conversation_id": "<optional — threads draft into an existing email conversation>"
+    "to_recipients": ["recipient@domain.com"]
   }'
 ```
 
@@ -138,7 +166,9 @@ The easiest way is via a Power Automate flow that triggers when a Teams meeting 
 
 | Field | Required | Description |
 |-------|----------|-------------|
-| `meeting_id` | Yes | Teams online meeting ID |
-| `to_recipients` | Yes | Array of To: email addresses |
+| `meeting_id` | One of `meeting_id` or `transcript` | Teams online meeting ID — fetches transcript from Graph |
+| `transcript` | One of `meeting_id` or `transcript` | Raw or VTT transcript text — skips Graph fetch |
+| `to_recipients` | Yes (unless `dry_run`) | Array of To: email addresses |
 | `cc_recipients` | No | Array of Cc: email addresses |
 | `conversation_id` | No | Graph conversation ID to thread the draft as a reply |
+| `dry_run` | No | If `true`, returns HTML preview instead of creating a draft |
