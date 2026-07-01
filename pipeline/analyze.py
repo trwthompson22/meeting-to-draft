@@ -49,7 +49,13 @@ def _analyze_anthropic(transcript: str) -> dict:
         system=[{"type": "text", "text": _SYSTEM, "cache_control": {"type": "ephemeral"}}],
         messages=[{"role": "user", "content": f"Transcript:\n\n{transcript}"}],
     )
-    return json.loads(message.content[0].text.strip())
+    raw = message.content[0].text.strip()
+    if raw.startswith("```"):
+        raw = raw.split("```", 2)[1]
+        if raw.startswith("json"):
+            raw = raw[4:]
+        raw = raw.rsplit("```", 1)[0].strip()
+    return json.loads(raw)
 
 
 def _analyze_openai(transcript: str) -> dict:

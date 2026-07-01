@@ -7,7 +7,8 @@ Power Automate calls this endpoint with a JSON body:
     "transcript":      "<raw transcript text>",        // pass directly to skip Graph fetch
     "conversation_id": "<optional Graph conversation ID for reply threading>",
     "to_recipients":   ["<email>", ...],
-    "cc_recipients":   ["<email>", ...]   // optional
+    "cc_recipients":   ["<email>", ...],  // optional
+    "dry_run":         true               // optional — returns HTML instead of creating a draft
 }
 """
 
@@ -39,11 +40,12 @@ def process_recording(req: func.HttpRequest) -> func.HttpResponse:
             status_code=400,
         )
 
+    dry_run = body.get("dry_run", False)
     conversation_id = body.get("conversation_id")
     to_recipients = body.get("to_recipients", [])
     cc_recipients = body.get("cc_recipients")
 
-    if not to_recipients:
+    if not dry_run and not to_recipients:
         return func.HttpResponse("Missing required field: to_recipients", status_code=400)
 
     try:
@@ -57,12 +59,21 @@ def process_recording(req: func.HttpRequest) -> func.HttpResponse:
         logger.info("Step 2/3 — analysing transcript")
         analysis = analyze.analyze_transcript(transcript)
 
-        logger.info("Step 3/3 — creating Outlook draft")
         body_html = email.render_body(
             summary=analysis["summary"],
             key_takeaways=analysis.get("key_takeaways", []),
             action_items=analysis.get("action_items", []),
         )
+
+        if dry_run:
+            logger.info("Dry run — returning HTML preview")
+            return func.HttpResponse(
+                json.dumps({"subject": analysis["subject"], "body_html": body_html}),
+                mimetype="application/json",
+                status_code=200,
+            )
+
+        logger.info("Step 3/3 — creating Outlook draft")
         draft_id = graph.create_draft(
             subject=analysis["subject"],
             body_html=body_html,
